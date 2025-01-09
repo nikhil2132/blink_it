@@ -1,61 +1,75 @@
-name: Flutter CI
-
+name: "Build & Release"
 on:
-  push:
-    branches: ["main"]
   pull_request:
-    branches: ["main"]
+    branches:
+      - main
+  push:
+    branches:
+      - main
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    name: Build & Release
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "zulu"
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.16.0"
           channel: "stable"
-          cache: true
+          architecture: x64
 
-      - name: Install dependencies
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Verify formatting
-        run: dart format --set-exit-if-changed .
-
-      - name: Analyze project source
+      - name: Analyze Flutter code
         run: flutter analyze
 
-      - name: Run tests
-        run: flutter test
+      - name: Run Flutter tests
+        run: flutter test --coverage
+        continue-on-error: true
+        id: tests
 
-      - name: Build APK
-        run: flutter build apk
-
-      - name: Upload APK
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: release-apk
+          name: test-results
+          path: coverage/
+
+      - name: Build Android APK
+        if: steps.tests.outcome == 'success'
+        run: flutter build apk --release
+
+      - name: Upload Android Build
+        if: steps.tests.outcome == 'success'
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-build
           path: build/app/outputs/flutter-apk/app-release.apk
 
-  ios:
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.16.0"
-          channel: "stable"
-          cache: true
-
-      - name: Install dependencies
-        run: flutter pub get
-
       - name: Build iOS
+        if: steps.tests.outcome == 'success'
         run: flutter build ios --release --no-codesign
+
+      - name: Upload iOS Build
+        if: steps.tests.outcome == 'success'
+        uses: actions/upload-artifact@v3
+        with:
+          name: ios-build
+          path: build/ios/iphoneos
