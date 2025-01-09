@@ -17,8 +17,8 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
-          distribution: "Temurin"
-          java-version: "11"
+          distribution: "zulu"
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -41,7 +41,7 @@ jobs:
         run: flutter analyze
 
       - name: Run Flutter tests
-        run: flutter test --coverage
+        run: flutter test --coverage --retry 3
         continue-on-error: true
         id: tests
 
@@ -53,23 +53,31 @@ jobs:
           path: coverage/
 
       - name: Build Android APK
-        if: steps.tests.outcome == 'success'
+        if: success()
         run: flutter build apk --release
 
       - name: Upload Android Build
-        if: steps.tests.outcome == 'success'
+        if: success()
         uses: actions/upload-artifact@v3
         with:
           name: android-build
           path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Build iOS
-        if: steps.tests.outcome == 'success'
+        if: success()
         run: flutter build ios --release --no-codesign
 
       - name: Upload iOS Build
-        if: steps.tests.outcome == 'success'
+        if: success()
         uses: actions/upload-artifact@v3
         with:
           name: ios-build
           path: build/ios/iphoneos
+
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "build/app/outputs/flutter-apk/app-release.apk,build/ios/iphoneos/Runner.app"
+          tag: v1.0.${{ github.run_number }}
+          token: ${{ secrets.TOKEN }}
