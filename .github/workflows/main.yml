@@ -29,27 +29,55 @@ jobs:
       - name: Cache Flutter dependencies
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.pub-cache
-            ${{ github.workspace }}/.flutter-plugins
-            ${{ github.workspace }}/.flutter-plugins-dependencies
-          key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.yaml') }}
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-
+            ${{ runner.os }}-pub-
 
-      - name: Install dependencies
+      - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Build iOS
-        run: flutter build ios --release --no-codesign
+      - name: Analyze Flutter code
+        run: flutter analyze
 
-      - name: Package iOS .ipa
-        run: |
-          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -sdk iphoneos -configuration Release archive -archivePath $PWD/build/Runner.xcarchive
-          xcodebuild -exportArchive -archivePath $PWD/build/Runner.xcarchive -exportOptionsPlist ios/Runner/ExportOptions.plist -exportPath $PWD/build/Runner.ipa
+      - name: Run Flutter tests
+        run: flutter test --coverage --retry 3
+        continue-on-error: true
+        id: tests
 
-      - name: Upload iOS .ipa
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: Runner.ipa
-          path: build/Runner.ipa
+          name: test-results
+          path: coverage/
+
+      - name: Build Android APK
+        if: success()
+        run: flutter build apk --release
+
+      - name: Upload Android Build
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-build
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Build iOS
+        if: success()
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload iOS Build
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: ios-build
+          path: build/ios/iphoneos
+
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "build/app/outputs/flutter-apk/app-release.apk,build/ios/iphoneos/Runner.app"
+          tag: v1.0.${{ github.run_number }}
+          token: ${{ secrets.TOKEN }}
